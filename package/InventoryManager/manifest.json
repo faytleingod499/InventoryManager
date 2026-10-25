@@ -1,0 +1,10 @@
+{
+    "Id": "InventoryManager",
+    "PackPath": "InventoryManager.pck",
+    "Metadata": {
+        "Name": "Inventory Manager",
+        "Author": "Fayt",
+        "Version": "1.0.0",
+        "Description": "Delete drinks and ring boxes you don't need (one at a time or a whole stack) and open all your treasure chests with one button. Client side, works on any server. This mod was created with the assistance of AI."
+    }
+}
