@@ -9,7 +9,7 @@ extends Node
 # It never sorts or reorders the inventory, so it works next to inventory sorting mods.
 # Both buttons need a second click within a few seconds, so nothing happens by accident.
 
-const VERSION = "1.0.1"
+const VERSION = "1.0.2"
 
 const CHEST_ID = "treasure_chest"
 const DELETABLE_IDS = ["ringbox"]        # sold in the general shop
@@ -75,12 +75,15 @@ func _follow_mouse():
 		if r != 0:
 			hover_since = clock
 			panel_stale = r != target_ref   # the game's panel now shows r
+			if panel_stale and target_ref != 0:
+				_show_panel(target_ref, hs)   # same frame, before drawing: no flash of the other item
 		else:
 			left_at = clock
 	if hover_ref != 0:
 		if hover_ref != target_ref and clock - hover_since >= DWELL:
 			target_ref = hover_ref
 			panel_stale = false
+			_show_panel(target_ref, hs)   # now it is the chosen one, so its description may show
 	elif panel_stale and clock - left_at >= RESTORE_AFTER:
 		_restore_panel()
 
@@ -102,6 +105,18 @@ func _slot_for(ref):
 
 
 # Shows the target item in the game's info panel again, with the game's own function for hovering an item.
+# Shows the description of `ref` in the game's info panel while the mouse may be on another slot (`under`). The game's
+# own _item_entered is used; hovered_slot is put back to the slot really under the mouse (the 1-5 hotbar keys use it).
+func _show_panel(ref, under):
+	var slot = _slot_for(ref)
+	var item = find_item(ref)
+	if slot == null or item == null or not inv.has_method("_item_entered"):
+		return
+	inv._item_entered(slot, item)
+	inv.hovered_slot = under
+	panel_stale = false
+
+
 func _restore_panel():
 	panel_stale = false
 	var slot = _slot_for(target_ref)
