@@ -12,6 +12,9 @@ class Slot extends Button:
 class InvStub extends Control:
 	var hovered_slot = null
 	var tab_type = "tool"
+	var item_grid = null
+	func _item_entered(button, item):
+		hovered_slot = button
 class PlayerStub extends Node:
 	var hud = null
 class Cosm extends Resource:
@@ -70,7 +73,9 @@ func run():
 	tabs.margin_left = 12; tabs.margin_top = 12; tabs.margin_right = -12; tabs.margin_bottom = -12
 	menu.add_child(tabs)
 	inv = InvStub.new(); inv.name = "inventory"; inv.set_anchors_and_margins_preset(Control.PRESET_WIDE); tabs.add_child(inv)
-	panel(inv, "Panel", 0.0, 0.08, 0.6, 1.0, 12, 12, -12, -12, Color(0.42, 0.27, 0.13))
+	var gpanel = panel(inv, "Panel", 0.0, 0.08, 0.6, 1.0, 12, 12, -12, -12, Color(0.42, 0.27, 0.13))
+	var grid = GridContainer.new(); grid.name = "items"; gpanel.add_child(grid)
+	inv.item_grid = grid
 	panel(inv, "Panel2", 0.6, 0.0, 1.0, 0.6, 12, 12, -12, -12, Color(0.42, 0.27, 0.13))
 	var p3 = panel(inv, "Panel3", 0.6, 0.6, 1.0, 1.0, 12, 12, -12, -12, Color(0.42, 0.27, 0.13))
 	var header = RichTextLabel.new(); header.name = "header"; header.bbcode_enabled = true
@@ -82,7 +87,7 @@ func run():
 	player.hud = hud
 	hs = Slot.new(); hs.visible = false
 	root.add_child(hud)
-	hud.add_child(hs)
+	grid.add_child(hs)
 	mod = load("res://mods/InventoryManager/main.gd").new()
 	root.add_child(mod)
 	yield(create_timer(0.5), "timeout")
@@ -106,10 +111,10 @@ func run():
 		hs.saved_ref = st[1]
 		inv.hovered_slot = hs
 		if st[4] == "fav": PD.locked_refs.append(wine)
-		yield(create_timer(0.3), "timeout")
+		yield(create_timer(0.7), "timeout")
 		if st[4] == "all":
 			mod.armed_what = "all"; mod.armed_ref = cola; mod.armed_until = mod.clock + 30; mod.last_sig = ""
-			yield(create_timer(0.3), "timeout")
+			yield(create_timer(0.7), "timeout")
 		yield(self, "idle_frame")
 		yield(self, "idle_frame")
 		var img = root.get_texture().get_data()

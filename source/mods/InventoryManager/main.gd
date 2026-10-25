@@ -9,13 +9,15 @@ extends Node
 # It never sorts or reorders the inventory, so it works next to inventory sorting mods.
 # Both buttons need a second click within a few seconds, so nothing happens by accident.
 
-const VERSION = "1.0.0"
+const VERSION = "1.0.1"
 
 const CHEST_ID = "treasure_chest"
 const DELETABLE_IDS = ["ringbox"]        # sold in the general shop
 const DELETABLE_PREFIXES = ["potion_"]   # every drink, all sold in the vending machine
 const CONFIRM_TIME = 3.0                 # seconds the second click stays valid
 const POLL = 0.1                         # seconds between button updates
+const DWELL = 0.25                       # the mouse must rest this long on an item before the buttons switch to it
+const RESTORE_AFTER = 0.3                # seconds outside the grid before the info panel goes back to the chosen item
 
 const COL_NORMAL = Color(0.662745, 0.498039, 0.286275, 1)
 const COL_HOVER = Color(0.772549, 0.603922, 0.384314, 1)
@@ -35,7 +37,11 @@ var row = null
 var btn_one = null
 var btn_all = null
 var btn_chests = null
-var target_ref = 0      # the item shown in the info panel (the last one the mouse was over)
+var target_ref = 0      # the item the buttons act on: the last item the mouse RESTED on (see DWELL)
+var hover_ref = 0       # the item under the mouse right now (0 = none)
+var hover_since = 0.0   # clock time the mouse arrived on hover_ref
+var left_at = 0.0       # clock time the mouse last left an item
+var panel_stale = false # the game's info panel shows some other item than the target
 var armed_what = ""     # "one", "all" or "chests": the button that was clicked once
 var armed_ref = 0
 var armed_until = 0.0
@@ -44,18 +50,71 @@ var last_sig = ""
 
 func _process(delta):
 	clock += delta
-	# follow the mouse every frame, so the item in the info panel is the item the buttons act on
 	if inv != null and is_instance_valid(inv):
-		var hs = inv.get("hovered_slot")
-		if typeof(hs) == TYPE_OBJECT and is_instance_valid(hs):
-			var r = hs.get("saved_ref")
-			if r != null and r != 0:
-				target_ref = r
+		_follow_mouse()
 	poll += delta
 	if poll < POLL:
 		return
 	poll = 0.0
 	_tick()
+
+
+# The items sit in a grid, so on the way from an item to the buttons the mouse crosses other items. Those must not
+# become the target: an item only counts after the mouse has rested on it for DWELL. The game's info panel changes on
+# every item the mouse touches, so once the mouse is off the items it is put back to the chosen item, which means the
+# panel and the buttons always talk about the same item.
+func _follow_mouse():
+	var r = 0
+	var hs = inv.get("hovered_slot")
+	if typeof(hs) == TYPE_OBJECT and is_instance_valid(hs):
+		var sr = hs.get("saved_ref")
+		if sr != null:
+			r = sr
+	if r != hover_ref:
+		hover_ref = r
+		if r != 0:
+			hover_since = clock
+			panel_stale = r != target_ref   # the game's panel now shows r
+		else:
+			left_at = clock
+	if hover_ref != 0:
+		if hover_ref != target_ref and clock - hover_since >= DWELL:
+			target_ref = hover_ref
+			panel_stale = false
+	elif panel_stale and clock - left_at >= RESTORE_AFTER:
+		_restore_panel()
+
+
+func _slot_for(ref):
+	if ref == 0:
+		return null
+	var grid = inv.get("item_grid")
+	if typeof(grid) != TYPE_OBJECT or not is_instance_valid(grid):
+		grid = inv.get_node_or_null("Panel/items")
+	if grid == null:
+		return null
+	for c in grid.get_children():
+		if c.is_queued_for_deletion():
+			continue
+		if c.get("saved_ref") == ref:
+			return c
+	return null
+
+
+# Shows the target item in the game's info panel again, with the game's own function for hovering an item.
+func _restore_panel():
+	panel_stale = false
+	var slot = _slot_for(target_ref)
+	var item = find_item(target_ref)
+	if slot == null or item == null or not inv.has_method("_item_entered"):
+		return
+	inv._item_entered(slot, item)
+	inv.hovered_slot = null   # the mouse is not on that item
+
+
+func _on_button_hover():
+	if panel_stale and hover_ref == 0:
+		_restore_panel()
 
 
 func _tick():
@@ -66,6 +125,10 @@ func _tick():
 		_disarm()
 		last_sig = ""
 		return
+	# only an item that is on the screen right now can be the target (the page or the tab may have changed)
+	if target_ref != 0 and (find_item(target_ref) == null or _slot_for(target_ref) == null):
+		target_ref = 0
+		panel_stale = false
 	_update_ui()
 
 
@@ -141,6 +204,7 @@ func _make_button(method):
 	b.add_color_override("font_color_pressed", COL_TEXT)
 	b.add_color_override("font_color_disabled", COL_TEXT_OFF)
 	b.connect("pressed", self, method)
+	b.connect("mouse_entered", self, "_on_button_hover")
 	_style(b, false)
 	return b
 

@@ -1,6 +1,6 @@
 {
     "name": "Inventory_Manager",
-    "version_number": "1.0.0",
+    "version_number": "1.0.1",
     "website_url": "https://github.com/faytleingod499/InventoryManager",
     "description": "Delete drinks and ring boxes you don't need (one at a time or a whole stack) and open all your treasure chests with one button. Client side, works on any server. This mod was created with the assistance of AI.",
     "dependencies": [

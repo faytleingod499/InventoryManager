@@ -16,6 +16,15 @@ class Slot extends Button:
 class InvStub extends Control:
 	var hovered_slot = null
 	var tab_type = "tool"
+	var item_grid = null
+	var panel_ref = 0      # which item the info panel shows
+	var entered = []       # every item the info panel was switched to
+	# like the game's inventory.gd: hovering an item shows it in the info panel
+	func _item_entered(button, item):
+		hovered_slot = button
+		panel_ref = item["ref"]
+		entered.append(item["ref"])
+		get_node("Panel3/header").bbcode_text = str(item["id"])
 
 class Cosm extends Resource:
 	var name = ""
@@ -50,9 +59,30 @@ func res(nm, stackable = false, sold = true):
 	r.can_be_sold = sold
 	return r
 
+func slot_for(ref):
+	var grid = inv.item_grid
+	for c in grid.get_children():
+		if c.saved_ref == ref:
+			return c
+	var sl = Slot.new()
+	sl.saved_ref = ref
+	grid.add_child(sl)
+	return sl
+
+func find_in_inv(ref):
+	for it in PD.inventory:
+		if it["ref"] == ref:
+			return it
+	return null
+
 func hover(ref):
-	hs.saved_ref = ref
-	inv.hovered_slot = hs
+	inv._item_entered(slot_for(ref), find_in_inv(ref))
+
+func leave():
+	inv.hovered_slot = null
+
+func wait(t):
+	yield(create_timer(t), "timeout")
 
 func box():
 	return inv.get_node("Panel3/InventoryManagerButtons")
@@ -72,7 +102,14 @@ func reset_inventory():
 	player.unequipped.clear()
 	mod._disarm()
 	mod.target_ref = 0
+	mod.hover_ref = 0
+	mod.panel_stale = false
 	mod.last_sig = ""
+	inv.hovered_slot = null
+	inv.entered.clear()
+	inv.panel_ref = 0
+	for c in inv.item_grid.get_children():
+		c.free()
 
 func _initialize():
 	call_deferred("run")
@@ -108,6 +145,9 @@ func run():
 	var menu = Control.new(); menu.name = "menu"; main.add_child(menu)
 	var tabs = Control.new(); tabs.name = "tabs"; menu.add_child(tabs)
 	inv = InvStub.new(); inv.name = "inventory"; tabs.add_child(inv)
+	var pgrid = Panel.new(); pgrid.name = "Panel"; inv.add_child(pgrid)
+	var items = GridContainer.new(); items.name = "items"; pgrid.add_child(items)
+	inv.item_grid = items
 	var p3 = Panel.new(); p3.name = "Panel3"; inv.add_child(p3)
 	var hdr = RichTextLabel.new(); hdr.name = "header"; p3.add_child(hdr)
 	player.hud = hud
@@ -132,10 +172,10 @@ func run():
 	var scratch = item("scratch_off")
 	for r in [rod, fish, scratch]:
 		hover(r)
-		yield(create_timer(0.25), "timeout")
+		yield(create_timer(0.5), "timeout")
 		check(buttons()[0].visible == false, "no Delete for " + str(r))
 	hover(chest)
-	yield(create_timer(0.25), "timeout")
+	yield(create_timer(0.5), "timeout")
 	check(buttons()[0].visible == false, "no Delete for a treasure chest (can't be bought)")
 	check(buttons()[2].visible == true, "but Open all chests is offered")
 	mod.delete_item(chest, false)
@@ -148,15 +188,15 @@ func run():
 	var rb = item("ringbox")
 	PD.hotbar[2] = rb
 	hover(rb)
-	yield(create_timer(0.25), "timeout")
+	yield(create_timer(0.5), "timeout")
 	check(buttons()[0].visible and buttons()[0].text == "Delete", "button says Delete")
 	check(buttons()[1].visible == false, "no Delete all for a single item")
 	click(0)
-	yield(create_timer(0.25), "timeout")
+	yield(create_timer(0.5), "timeout")
 	check(PD.inventory.size() == 1, "first click does not delete")
 	check(buttons()[0].text == "Click again", "button asks for a second click")
 	click(0)
-	yield(create_timer(0.25), "timeout")
+	yield(create_timer(0.5), "timeout")
 	check(PD.inventory.size() == 0, "second click deletes it")
 	check(PD.hotbar[2] == 0, "its hotbar slot was cleared by the game")
 	check(player.unequipped.has(rb), "game told the player (unequips if held)")
@@ -168,27 +208,27 @@ func run():
 	var r1 = item("ringbox")
 	var r2 = item("ringbox")
 	hover(r1)
-	yield(create_timer(0.25), "timeout")
+	yield(create_timer(0.5), "timeout")
 	click(0); click(0)
-	yield(create_timer(0.25), "timeout")
+	yield(create_timer(0.5), "timeout")
 	check(PD.inventory.size() == 1 and PD.inventory[0]["ref"] == r2, "only the hovered one is gone")
 
 	print("== a stack of drinks (stacking mod / game stacking)")
 	reset_inventory()
 	var cola = item("potion_catch", 12)
 	hover(cola)
-	yield(create_timer(0.25), "timeout")
+	yield(create_timer(0.5), "timeout")
 	check(buttons()[0].text == "Delete 1", "first button says Delete 1")
 	check(buttons()[1].visible and buttons()[1].text == "Delete all (x12)", "second button says Delete all (x12)")
 	click(0); click(0)
-	yield(create_timer(0.25), "timeout")
+	yield(create_timer(0.5), "timeout")
 	check(PD.inventory.size() == 1 and PD.inventory[0]["count"] == 11, "Delete 1 takes one: x11 left")
 	check(buttons()[1].text == "Delete all (x11)", "label follows the count")
 	click(1)
-	yield(create_timer(0.25), "timeout")
+	yield(create_timer(0.5), "timeout")
 	check(PD.inventory.size() == 1, "Delete all needs two clicks too")
 	click(1)
-	yield(create_timer(0.25), "timeout")
+	yield(create_timer(0.5), "timeout")
 	check(PD.inventory.size() == 0, "the whole stack is gone")
 	check(PD.notifications.back()[0] == "deleted catcher's cola (x11)", "notification: " + str(PD.notifications.back()))
 
@@ -197,10 +237,10 @@ func run():
 	var two = item("potion_wine", 2)
 	var one = item("potion_catch", 1)
 	hover(one)
-	yield(create_timer(0.25), "timeout")
+	yield(create_timer(0.5), "timeout")
 	check(buttons()[0].text == "Delete" and buttons()[1].visible == false, "count 1 acts like a single item")
 	hover(two)
-	yield(create_timer(0.25), "timeout")
+	yield(create_timer(0.5), "timeout")
 	check(buttons()[1].visible and buttons()[1].text == "Delete all (x2)", "count 2 offers Delete all")
 
 	print("== second click must come in time and for the same item")
@@ -208,23 +248,23 @@ func run():
 	var da = item("potion_catch", 5)
 	var db = item("potion_wine", 5)
 	hover(da)
-	yield(create_timer(0.25), "timeout")
+	yield(create_timer(0.5), "timeout")
 	click(1)
 	hover(db)
-	yield(create_timer(0.25), "timeout")
+	yield(create_timer(0.5), "timeout")
 	click(1)
 	check(PD.inventory.size() == 2, "arming one item then clicking on another does not delete anything")
 	mod._disarm()
 	hover(da)
-	yield(create_timer(0.25), "timeout")
+	yield(create_timer(0.5), "timeout")
 	click(1)
 	mod.armed_until = mod.clock - 0.1
 	click(1)
 	check(PD.inventory.size() == 2, "a second click after the time ran out only arms again")
-	yield(create_timer(0.25), "timeout")
+	yield(create_timer(0.5), "timeout")
 	check(buttons()[1].text == "Click again", "and asks again")
 	mod._disarm()
-	yield(create_timer(0.25), "timeout")
+	yield(create_timer(0.5), "timeout")
 	check(buttons()[1].text == "Delete all (x5)", "label goes back after disarming")
 
 	print("== favorited items are protected")
@@ -232,7 +272,7 @@ func run():
 	var fav = item("potion_catch", 4)
 	PD._lock_item(fav)
 	hover(fav)
-	yield(create_timer(0.25), "timeout")
+	yield(create_timer(0.5), "timeout")
 	check(buttons()[0].disabled and buttons()[0].text == "Unfavorite to delete", "button disabled with a hint")
 	check(buttons()[1].visible == false, "no Delete all")
 	click(0); click(0)
@@ -243,26 +283,102 @@ func run():
 	reset_inventory()
 	var t1 = item("potion_catch", 3)
 	hover(t1)
-	yield(create_timer(0.25), "timeout")
+	yield(create_timer(0.5), "timeout")
 	inv.hovered_slot = null   # mouse moved to the buttons
-	yield(create_timer(0.25), "timeout")
+	yield(create_timer(0.5), "timeout")
 	check(mod.target_ref == t1 and buttons()[0].visible, "item stays selected after the mouse leaves its slot")
 	var gone = item("potion_wine", 1)
 	hover(gone)
-	yield(create_timer(0.25), "timeout")
+	yield(create_timer(0.5), "timeout")
 	PD._remove_item(gone)
 	inv.hovered_slot = null
-	yield(create_timer(0.25), "timeout")
+	yield(create_timer(0.5), "timeout")
 	check(mod.target_ref == 0, "target resets when the item disappears")
+
+	print("== crossing other items on the way to the buttons (the grid layout problem)")
+	reset_inventory()
+	var sa = item("potion_catch", 8)
+	var sb = item("potion_wine", 3)
+	var sc = item("ringbox")
+	var sd = item("fishing_rod_simple")
+	hover(sa)
+	yield(create_timer(0.5), "timeout")
+	check(mod.target_ref == sa, "resting on an item selects it")
+	hover(sb)
+	yield(create_timer(0.08), "timeout")
+	hover(sc)
+	yield(create_timer(0.08), "timeout")
+	hover(sd)
+	yield(create_timer(0.08), "timeout")
+	leave()
+	yield(create_timer(0.1), "timeout")
+	check(mod.target_ref == sa, "three items crossed quickly: the target is still the first one")
+	check(buttons()[1].text == "Delete all (x8)", "the buttons still say Delete all (x8)")
+	check(inv.panel_ref == sd, "(the game's info panel is showing the last item crossed)")
+	yield(create_timer(0.35), "timeout")
+	check(inv.panel_ref == sa, "after leaving the grid the info panel goes back to the chosen item")
+	check(inv.hovered_slot == null, "and the game is not told the mouse is on it")
+	click(1)
+	click(1)
+	yield(create_timer(0.3), "timeout")
+	var ids = []
+	for it in PD.inventory:
+		ids.append(it["id"])
+	check(ids.size() == 3 and not ids.has("potion_catch"), "Delete all removed the chosen stack and nothing else: " + str(ids))
+
+	print("== reaching a button right after crossing an item fixes the panel at once")
+	reset_inventory()
+	var ta = item("potion_catch", 5)
+	var tb = item("potion_wine", 5)
+	hover(ta)
+	yield(create_timer(0.5), "timeout")
+	hover(tb)
+	yield(create_timer(0.08), "timeout")
+	leave()
+	yield(create_timer(0.05), "timeout")
+	check(inv.panel_ref == tb, "panel shows the crossed item for a moment")
+	buttons()[0].emit_signal("mouse_entered")
+	check(inv.panel_ref == ta, "the moment the mouse reaches a button the panel shows the chosen item again")
+	check(mod.target_ref == ta, "target unchanged")
+
+	print("== resting on another item does switch the buttons")
+	hover(tb)
+	yield(create_timer(0.5), "timeout")
+	check(mod.target_ref == tb, "after resting on it the target is the new item")
+	check(inv.panel_ref == tb, "and the panel shows it")
+	leave()
+	yield(create_timer(0.6), "timeout")
+	check(mod.target_ref == tb and inv.panel_ref == tb, "leaving the grid keeps it")
+
+	print("== a quick touch is not a selection when nothing was chosen yet")
+	reset_inventory()
+	var qa = item("potion_catch", 3)
+	hover(qa)
+	yield(create_timer(0.1), "timeout")
+	leave()
+	yield(create_timer(0.5), "timeout")
+	check(mod.target_ref == 0 and box().visible == false, "no target, no buttons")
+
+	print("== the target is dropped when its item is no longer on the screen (page or tab changed)")
+	reset_inventory()
+	var pa = item("potion_catch", 3)
+	hover(pa)
+	yield(create_timer(0.5), "timeout")
+	check(buttons()[0].visible, "buttons shown")
+	leave()
+	for c in inv.item_grid.get_children():
+		c.free()   # the game rebuilds the grid with other items
+	yield(create_timer(0.3), "timeout")
+	check(mod.target_ref == 0 and box().visible == false, "buttons gone")
 
 	print("== hidden when the inventory screen is closed")
 	reset_inventory()
 	var vis = item("ringbox")
 	hover(vis)
-	yield(create_timer(0.25), "timeout")
+	yield(create_timer(0.5), "timeout")
 	mod.armed_what = "one"; mod.armed_ref = vis; mod.armed_until = mod.clock + 10
 	inv.visible = false
-	yield(create_timer(0.25), "timeout")
+	yield(create_timer(0.5), "timeout")
 	check(mod.armed_what == "", "arming is dropped when the screen closes")
 	inv.visible = true
 
@@ -276,14 +392,14 @@ func run():
 	PD.hotbar[0] = cu
 	var keep = item("ringbox")
 	PD.notifications.clear()   # the favorite popup above is the game's, not the mod's
-	yield(create_timer(0.25), "timeout")
+	yield(create_timer(0.5), "timeout")
 	check(buttons()[2].visible and buttons()[2].text == "Open all chests (6)", "counts stacks + singles, skips the favorited one: " + buttons()[2].text)
 	click(2)
-	yield(create_timer(0.25), "timeout")
+	yield(create_timer(0.5), "timeout")
 	check(PD.money == 50, "first click opens nothing")
 	check(buttons()[2].text == "Click again to open 6", "asks again")
 	click(2)
-	yield(create_timer(0.25), "timeout")
+	yield(create_timer(0.5), "timeout")
 	check(PD.cosmetics_unlocked.size() == 3, "3 chest cosmetics unlocked (not the shop-only one): " + str(PD.cosmetics_unlocked))
 	check(not PD.cosmetics_unlocked.has("d_shop_only"), "shop-only cosmetic never given")
 	check(PD.money == 50 + 300, "the other 3 chests paid $100 each: " + str(PD.money))
@@ -304,7 +420,7 @@ func run():
 	PD.money = 0
 	PD.cosmetics_unlocked = ["a_hat", "b_hat", "c_hat"]
 	item("treasure_chest")
-	yield(create_timer(0.25), "timeout")
+	yield(create_timer(0.5), "timeout")
 	click(2); click(2)
 	check(PD.money == 100, "got $100")
 	check(PD.notifications[0][0] == "opened 1 chest: $100", "text: " + PD.notifications[0][0])
@@ -317,7 +433,7 @@ func run():
 		c.name = "Extra " + str(i)
 		GL.cosmetic_data["x" + str(i)] = {"file": c}
 	item("treasure_chest", 6)
-	yield(create_timer(0.25), "timeout")
+	yield(create_timer(0.5), "timeout")
 	click(2); click(2)
 	check(PD.notifications[0][0] == "opened 6 chests: 6 new cosmetics", "text: " + PD.notifications[0][0])
 
