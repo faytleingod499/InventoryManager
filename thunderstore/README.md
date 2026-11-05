@@ -1,6 +1,6 @@
 # Inventory Manager
 
-Two buttons for the inventory screen that the game is missing: **Delete** and **Open all chests**.
+Things the inventory screen and hotbar are missing: a **Delete** button, **Open all chests**, and **five more hotbar slots**.
 
 *This mod was created with the assistance of AI.*
 
@@ -20,6 +20,15 @@ Rest the mouse on an item in your inventory for a moment and its Delete button a
 ## Open all chests
 
 When you have treasure chests, an **Open all chests (N)** button appears. It opens every chest at once and gives what the game gives for each one: a cosmetic you don't own yet, or $100 once you own them all. You get one message with the result instead of one pop-up per chest. Favorited chests are left closed.
+
+## Bigger hotbar
+
+Five more hotbar slots, **6 7 8 9 0**, added to the right of the game's five. They use the game's own slot graphics and sit in the same place on screen, and the whole row stays centered.
+
+- **The keys are locked like the game's own 1-5**: they do nothing while you are typing in chat or have a menu or pop-up open. (Some hotbar mods keep reading the number keys while you type, so typing a 6 in chat would switch your item.)
+- **Putting an item on a slot:** open the inventory, rest the mouse on an item and press 6, 7, 8, 9 or 0, exactly like 1-5. The keypad numbers work too. The inventory's tooltips and labels say 1-0 / 0 to match.
+- Your bindings are saved with the rest of your hotbar.
+- **Use only one hotbar mod.** If another mod has already added slots, Inventory Manager leaves the hotbar alone (it writes a line in the GDWeave log), but two expanding mods are best avoided anyway.
 
 ## Works with other inventory mods
 

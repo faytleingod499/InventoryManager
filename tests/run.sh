@@ -5,4 +5,7 @@ set -e
 cd "$(dirname "$0")"
 GODOT=${GODOT:-/home/claude/godot/Godot_v3.5.3-stable_linux_headless.64}
 ./make_stubs.sh
-timeout 120 "$GODOT" --path . -s e_inv.gd 2>&1 | grep -v "^Godot Engine\|^$\|getting unowned cosmetic\|locked$"
+for t in e_inv e_hotbar; do
+  echo "##### $t"
+  timeout 120 "$GODOT" --path . -s $t.gd 2>&1 | grep -v "^Godot Engine\|^$\|getting unowned cosmetic\|locked$" || true
+done

@@ -8,8 +8,12 @@ extends Node
 #    own yet, otherwise $100), and shows one message instead of one per chest. Favorited chests are left alone.
 # It never sorts or reorders the inventory, so it works next to inventory sorting mods.
 # Both buttons need a second click within a few seconds, so nothing happens by accident.
+#  - Bigger hotbar: five more slots (keys 6 7 8 9 0) next to the game's five, made as copies of the game's own slot so
+#    they look the same, with the whole row staying centred. The keys follow the game's own rule for 1-5: they do
+#    nothing while you type in chat or have a menu open. In the inventory, hover an item and press 6-0 to put it there.
+#    Not used if another mod has already added slots to the hotbar.
 
-const VERSION = "1.0.2"
+const VERSION = "1.1.0"
 
 const CHEST_ID = "treasure_chest"
 const DELETABLE_IDS = ["ringbox"]        # sold in the general shop
@@ -18,6 +22,11 @@ const CONFIRM_TIME = 3.0                 # seconds the second click stays valid
 const POLL = 0.1                         # seconds between button updates
 const DWELL = 0.25                       # the mouse must rest this long on an item before the buttons switch to it
 const RESTORE_AFTER = 0.3                # seconds outside the grid before the info panel goes back to the chosen item
+
+# the extra hotbar slots: the key that picks each one (the number row or the keypad) and the hotbar index of the first
+const HOTBAR_FIRST = 5
+const HOTBAR_LABELS = [6, 7, 8, 9, 0]
+const HOTBAR_KEYS = [[KEY_6, KEY_KP_6], [KEY_7, KEY_KP_7], [KEY_8, KEY_KP_8], [KEY_9, KEY_KP_9], [KEY_0, KEY_KP_0]]
 
 const COL_NORMAL = Color(0.662745, 0.498039, 0.286275, 1)
 const COL_HOVER = Color(0.772549, 0.603922, 0.384314, 1)
@@ -46,10 +55,14 @@ var armed_what = ""     # "one", "all" or "chests": the button that was clicked 
 var armed_ref = 0
 var armed_until = 0.0
 var last_sig = ""
+var hotbar = null       # the game's hotbar row (HBoxContainer) when my slots are in it
+var hotbar_foreign = null  # a hotbar row some other mod already changed: left alone
+var key_was_down = [false, false, false, false, false]
 
 
 func _process(delta):
 	clock += delta
+	_hotbar_keys()
 	if inv != null and is_instance_valid(inv):
 		_follow_mouse()
 	poll += delta
@@ -133,6 +146,7 @@ func _on_button_hover():
 
 
 func _tick():
+	_find_hotbar()
 	_find_inventory()
 	if inv == null or box == null or not is_instance_valid(box):
 		return
@@ -145,6 +159,149 @@ func _tick():
 		target_ref = 0
 		panel_stale = false
 	_update_ui()
+	_fix_hotbar_hints()
+
+
+# ---------------------------------------------------------------------------------------------------- bigger hotbar
+
+func _the_player():
+	var players = get_tree().get_nodes_in_group("controlled_player")
+	if players.size() == 0:
+		return null
+	return players[0]
+
+
+func _the_hud():
+	var player = _the_player()
+	if player == null:
+		return null
+	var hud = player.get("hud")
+	if typeof(hud) != TYPE_OBJECT or not is_instance_valid(hud):
+		return null
+	return hud
+
+
+func _find_hotbar():
+	var hud = _the_hud()
+	if hud == null:
+		return
+	var row_node = hud.get_node_or_null("main/in_game/hotbar")
+	if row_node == null:
+		return
+	if row_node == hotbar and is_instance_valid(hotbar):
+		_ensure_hotbar_keys()
+		return
+	if row_node == hotbar_foreign:
+		return
+	if row_node.get_child_count() != 5:
+		# not the game's five slots: another mod has already changed the hotbar, so I stay out of it
+		hotbar_foreign = row_node
+		hotbar = null
+		print("[InventoryManager] the hotbar already has ", row_node.get_child_count(), " slots (another mod?), no extra slots added")
+		return
+	_build_hotbar(hud, row_node)
+
+
+func _build_hotbar(hud, row_node):
+	var template = row_node.get_child(row_node.get_child_count() - 1)
+	var empty_hand = {"id": "empty_hand", "ref": 0, "size": 1.0, "quality": 0, "tags": []}
+	for i in range(HOTBAR_LABELS.size()):
+		# a copy of the game's own slot, so it looks and behaves the same
+		var slot = template.duplicate(Node.DUPLICATE_GROUPS | Node.DUPLICATE_SCRIPTS | Node.DUPLICATE_USE_INSTANCING)
+		slot.name = "InventoryManagerSlot" + str(HOTBAR_LABELS[i])
+		slot.set("force_hotkey", HOTBAR_LABELS[i])
+		slot.set("saved_ref", 0)
+		row_node.add_child(slot)
+		# the game's refresh disconnects this and connects it again with the item; it must exist first
+		if hud.has_method("_item_pressed"):
+			slot.connect("pressed", hud, "_item_pressed", [empty_hand])
+	hotbar = row_node
+	if _ensure_hotbar_keys():
+		return
+	var data = get_node_or_null("/root/PlayerData")
+	if data != null:
+		data.emit_signal("_hotbar_refresh")
+
+
+# the game's hotbar list has an entry per slot (0-4); the extra slots need theirs. A loaded save or a reset brings the
+# short list back, so this is checked all the time. Returns true if it added any (and asked the HUD to redraw).
+func _ensure_hotbar_keys():
+	var data = get_node_or_null("/root/PlayerData")
+	if data == null or typeof(data.get("hotbar")) != TYPE_DICTIONARY:
+		return false
+	var added = false
+	for i in range(HOTBAR_LABELS.size()):
+		if not data.hotbar.has(HOTBAR_FIRST + i):
+			data.hotbar[HOTBAR_FIRST + i] = 0
+			added = true
+	if added:
+		data.emit_signal("_hotbar_refresh")
+	return added
+
+
+# Same rule as the game's own 1-5: nothing while typing in chat or with a menu or popup open (the game sets the player's
+# `busy` for all of those). With the inventory open the keys put the hovered item on that slot instead, like 1-5 do.
+func _hotbar_keys():
+	var pressed = []
+	for i in range(HOTBAR_KEYS.size()):
+		var down = _key_down(i)
+		if down and not key_was_down[i]:
+			pressed.append(i)
+		key_was_down[i] = down   # also while blocked, so holding a key through a closing menu does nothing
+	if pressed.empty() or hotbar == null or not is_instance_valid(hotbar):
+		return
+	var player = _the_player()
+	var hud = _the_hud()
+	if player == null or hud == null:
+		return
+	if hud.get("using_chat") == true:
+		return
+	var popups = hud.get("popups")
+	if typeof(popups) == TYPE_ARRAY and popups.size() > 0:
+		return
+	_ensure_hotbar_keys()
+	for i in pressed:
+		if inv != null and is_instance_valid(inv) and inv.is_visible_in_tree():
+			_bind_hovered(HOTBAR_FIRST + i)
+		elif player.get("busy") != true and player.has_method("_equip_hotbar"):
+			player._equip_hotbar(HOTBAR_FIRST + i)
+
+
+var key_override = null   # tests only: a headless run can't press real keys, so it supplies the key states
+
+func _key_down(i):
+	if key_override != null:
+		return key_override[i]
+	return Input.is_key_pressed(HOTBAR_KEYS[i][0]) or Input.is_key_pressed(HOTBAR_KEYS[i][1])
+
+
+func _bind_hovered(hotbar_slot):
+	var hs = inv.get("hovered_slot")
+	if typeof(hs) != TYPE_OBJECT or not is_instance_valid(hs):
+		return
+	var index = hs.get("slot")
+	var data = get_node_or_null("/root/PlayerData")
+	if data == null or typeof(index) != TYPE_INT or index < 0 or index >= data.inventory.size():
+		return
+	data._bind_hotbar_slot(hotbar_slot, index)
+
+
+# The game's inventory slots label the tenth slot "10" and its tooltips say "Press 1-5"; show 0 and 1-0 instead.
+func _fix_hotbar_hints():
+	if hotbar == null or inv == null or not is_instance_valid(inv):
+		return
+	var grid = inv.get("item_grid")
+	if typeof(grid) != TYPE_OBJECT or not is_instance_valid(grid):
+		return
+	for c in grid.get_children():
+		var label = c.get("hotkey_node")
+		if typeof(label) == TYPE_OBJECT and is_instance_valid(label) and label.get("text") == "10":
+			label.text = "0"
+		var tip = c.get_node_or_null("root/tooltip_node")
+		if tip != null:
+			var body = tip.get("body")
+			if typeof(body) == TYPE_STRING and body.find("Press 1-5 to") != -1:
+				tip.set("body", body.replace("Press 1-5 to", "Press 1-0 to"))
 
 
 # ---------------------------------------------------------------------------------------------------- finding the screen

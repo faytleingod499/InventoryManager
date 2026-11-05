@@ -1,2 +1,2 @@
-## 1.0.2
-- Fixed: the item description no longer flickers to the items the mouse crosses on the way to the buttons. It stays on the chosen item; another item's description shows once the mouse rests on it.
+## 1.1.0
+- New: five more hotbar slots (keys 6 7 8 9 0), same look and place as the game's, row stays centered. The keys are locked while you type in chat or have a menu open, like the game's own 1-5. In the inventory, hover an item and press 6-0 to put it on a slot.

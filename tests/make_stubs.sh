@@ -32,7 +32,7 @@ signal _notif_send(text, type)
 signal _item_removal(ref)
 signal _play_sfx(id)
 HEAD
-for f in _add_item _validate_item_safety _remove_item _lock_item _find_item_code _unlock_cosmetic _get_unowned_cosmetic _send_notification _set_cash; do
+for f in _add_item _validate_item_safety _remove_item _lock_item _bind_hotbar_slot _find_item_code _unlock_cosmetic _get_unowned_cosmetic _send_notification _set_cash; do
   fn $f
   echo
 done
